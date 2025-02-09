@@ -50,6 +50,9 @@ async def main():
                 else:
                     messages.append(scrap_chat(chat, keywords, client))
 
+            if len(messages) == 0:
+                print("No message could be retrieved")
+
             for message in messages:
                 print(message.text)
                 print()
@@ -75,57 +78,77 @@ async def scrap_chat(
     Returns:
         list: A list of messages containing keywords.
     """
-    if messages is None:
-        messages = []
+    retries = 3
+    for attempt in range(retries):
+        try:
+            if messages is None:
+                messages = []
 
-    # Get chat entity
-    try:
-        chat = await client.get_entity(chat_input)
-    except ValueError:
-        print(
-            f"Chat <<{chat_input}>> not found. Make sure you're a member of the chat/channel."
-        )
-        return messages
+            # Get chat entity
+            try:
+                chat = await client.get_entity(chat_input)
+            except ValueError:
+                print(
+                    f"Chat <<{chat_input}>> not found. Make sure you're a member of the chat/channel."
+                )
+                return messages
 
-    # Calculate time 8 hours ago in UTC
-    start_time = datetime.now(pytz.utc) - timedelta(hours=MAX_HOURS)
+            # Calculate time 8 hours ago in UTC
+            start_time = datetime.now(pytz.utc) - timedelta(hours=MAX_HOURS)
 
-    print(f"Retrieving messages since {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            print(
+                f"Retrieving messages since {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+            )
 
-    # Store sender IDs in a set
-    existing_sender_ids = {
-        message.sender_id for message in messages if message.sender_id
-    }
+            # Store sender IDs in a set
+            existing_sender_ids = {
+                message.sender_id for message in messages if message.sender_id
+            }
 
-    # Create search pattern
-    keyword_pattern = re.compile(
-        "|".join(re.escape(keyword) for keyword in keywords), re.IGNORECASE
-    )
+            # Create search pattern
+            keyword_pattern = re.compile(
+                "|".join(re.escape(keyword) for keyword in keywords), re.IGNORECASE
+            )
 
-    # Collect messages
-    async for message in client.iter_messages(
-        chat,
-        offset_date=start_time,
-        reverse=False,  # Set true for getting messages in chronological order
-    ):
-        if USER_NONREPETITION:
-            if (
-                message.sender_id
-                and message.sender_id not in existing_sender_ids
-                and keyword_pattern.search(message.text)
-            ):  # Check if the message contains keywords using regex
-                messages.append(message)
-                existing_sender_ids.add(message.sender_id)  # Add sender ID to the set
-        else:
-            if keyword_pattern.search(message.text):
-                messages.append(message)
+            # Collect messages
+            async for message in client.iter_messages(
+                chat,
+                offset_date=start_time,
+                reverse=False,  # Set true for getting messages in chronological order
+            ):
+                if USER_NONREPETITION:
+                    if (
+                        message.sender_id
+                        and message.sender_id not in existing_sender_ids
+                        and keyword_pattern.search(message.text)
+                    ):  # Check if the message contains keywords using regex
+                        messages.append(message)
+                        existing_sender_ids.add(
+                            message.sender_id
+                        )  # Add sender ID to the set
+                else:
+                    if keyword_pattern.search(message.text):
+                        messages.append(message)
 
-    # Print results
-    print(
-        f"\nFound {len(messages)} messages on <<{chat_input}>> in the last {MAX_HOURS} hours."
-    )
+            # Print results
+            print(
+                f"\nFound {len(messages)} messages on <<{chat_input}>> in the last {MAX_HOURS} hours."
+            )
 
-    return messages
+            return messages
+        except Exception as e:
+            logging.error(
+                "Error scraping chat %s (attempt %s/%s): %s",
+                chat_input,
+                attempt + 1,
+                retries,
+                e,
+            )
+            if attempt == retries - 1:
+                logging.error(
+                    "Failed to scrap chat %s after %s attempts.", chat_input, retries
+                )
+            return []
 
 
 async def csv_to_list(filename: str) -> list:
