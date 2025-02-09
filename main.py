@@ -28,32 +28,53 @@ async def main():
     api_id = MY_API_ID
     api_hash = MY_API_HASH
     session_name = MY_SESSION_NAME
-    client = TelegramClient(session_name, api_id, api_hash)
 
-    await client.start()
+    try:
+        async with TelegramClient(session_name, api_id, api_hash) as client:
+            await client.start()
 
-    chats = await csv_to_list("chats.csv")
-    keywords = await csv_to_list("keywords.csv")
+            chats = await csv_to_list("chats.csv")
+            keywords = await csv_to_list("keywords.csv")
 
-    messages = []
+            print(chats[0])
+            print(type(chats[0]))
+            if chats is None or keywords is None:
+                logging.error("Could not load chats or keywords. Exiting.")
+                return
 
-    for chat in chats:
-        if INTERCHAT_NONREPETITION:
-            messages = await scrap_chat(chat, keywords, client, messages)
-        else:
-            messages.append(scrap_chat(chat, keywords, client))
+            messages = []
 
-    for message in messages:
-        print(message)
-        print()
-    print(len(messages))
-    await client.disconnect()
+            for chat in chats:
+                if INTERCHAT_NONREPETITION:
+                    messages = await scrap_chat(chat, keywords, client, messages)
+                else:
+                    messages.append(scrap_chat(chat, keywords, client))
+
+            for message in messages:
+                print(message.text)
+                print()
+            print(len(messages))
+            await client.disconnect()
+
+    except Exception as e:
+        logging.error(f"An unexpected error occurred: {e}")
 
 
 async def scrap_chat(
     chat_input: str, keywords: str, client: TelegramClient, messages=None
 ):
-    """Function for scrapping a chat/channel. Returns a list of msgs wich contain keywords"""
+    """
+    Scraps messages from a Telegram chat/channel.
+
+    Args:
+        chat_input (str): The chat ID or username.
+        keywords (list): A list of keywords to search for.
+        client (TelegramClient): The Telegram client instance.
+        messages (list, optional): A list to append messages to. Defaults to None.
+
+    Returns:
+        list: A list of messages containing keywords.
+    """
     if messages is None:
         messages = []
 
@@ -64,34 +85,40 @@ async def scrap_chat(
         print(
             f"Chat <<{chat_input}>> not found. Make sure you're a member of the chat/channel."
         )
-        return
+        return messages
 
     # Calculate time 8 hours ago in UTC
     start_time = datetime.now(pytz.utc) - timedelta(hours=MAX_HOURS)
 
     print(f"Retrieving messages since {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-    # Collect messages
-    ids = []
-    for message in messages:
-        ids.append(message.sender_id)
+    # Store sender IDs in a set
+    existing_sender_ids = {
+        message.sender_id for message in messages if message.sender_id
+    }
 
+    # Create search pattern
+    keyword_pattern = re.compile(
+        "|".join(re.escape(keyword) for keyword in keywords), re.IGNORECASE
+    )
+
+    # Collect messages
     async for message in client.iter_messages(
         chat,
         offset_date=start_time,
         reverse=False,  # Set true for getting messages in chronological order
     ):
         if USER_NONREPETITION:
-            contains_keyword = False
-            for keyword in keywords:
-                if keyword in message.text:
-                    contains_keyword = True
-                    break
-            if contains_keyword and message.sender_id not in ids:
+            if (
+                message.sender_id
+                and message.sender_id not in existing_sender_ids
+                and keyword_pattern.search(message.text)
+            ):  # Check if the message contains keywords using regex
                 messages.append(message)
-                ids.append(message.sender_id)
+                existing_sender_ids.add(message.sender_id)  # Add sender ID to the set
         else:
-            messages.append(message)
+            if keyword_pattern.search(message.text):
+                messages.append(message)
 
     # Print results
     print(
@@ -114,10 +141,13 @@ async def csv_to_list(filename: str) -> list:
                 data.append(row)
         return data
     except FileNotFoundError:
-        print(f"Error: File '{filename}' not found.")
+        logging.error(f"Error: File '{filename}' not found.")
+        return None
+    except csv.Error as e:
+        logging.error(f"CSV error: {e}")
         return None
     except Exception as e:
-        print(f"An error occurred: {e}")
+        logging.error(f"An unexpected error occurred: {e}")
         return None
 
 
