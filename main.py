@@ -1,13 +1,14 @@
 import asyncio
 import csv
-import pytz
-import os
-
 from cs50 import SQL
 from datetime import datetime, timedelta
+import os
+import pytz
 from telethon.tl.types import InputPeerChannel, InputPeerChat, InputPeerUser
 from telethon import TelegramClient, events
 
+MY_API_ID = "xxx" # Your api id
+MY_API_HASH= "xxx" # Your api hash
 MAX_HOURS = 8  # Hours to retrieve msgs
 USER_NONREPETITION = True  # Set true for only getting one message per user
 INTERCHAT_NONREPETITION = True  # Set true for making the nonrepetition across chats
@@ -24,13 +25,22 @@ async def main():
     chats = csv_to_list("chats.csv")
     keywords = csv_to_list("keywords.csv")
 
+    messages = []
+
+    for chat in chats:
+        if INTERCHAT_NONREPETITION:
+            messages = scrap_chat(chat, keywords, client, messages)
+        else:
+            messages.append(scrap_chat(chat, keywords, client))
+            
+    
     await client.disconnect()
 
 
-async def scrap_group(
+async def scrap_chat(
     chat_input: str, keywords: str, client: TelegramClient, messages=None
 ):
-    """Function for scrapping a group and returning a list of messages that contains given keywords"""
+    """Function for scrapping a group. Returns a list of msgs wich contain keywords"""
     if messages is None:
         messages = []
 
@@ -58,14 +68,18 @@ async def scrap_group(
         offset_date=start_time,
         reverse=False,  # Set true for getting messages in chronological order
     ):
-        contains_keyword = False
-        for keyword in keywords:
-            if keyword in message.text:
-                contains_keyword = True
-                break
-        if contains_keyword and message.sender_id not in ids:
-            messages.append(message)
-            ids.append(message.sender_id)
+        if USER_NONREPETITION:
+            contains_keyword = False
+            for keyword in keywords:
+                if keyword in message.text:
+                    contains_keyword = True
+                    break
+            if contains_keyword and message.sender_id not in ids:
+                messages.append(message)
+                ids.append(message.sender_id)
+        else:
+                messages.append(message)
+            
 
     # Print results
     print(
@@ -96,7 +110,4 @@ async def csv_to_list(filename: str) -> list:
 
 
 if __name__ == "__main__":
-    import asyncio
-    import getpass
-
     asyncio.run(main())
