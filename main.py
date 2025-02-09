@@ -11,15 +11,19 @@ from telethon import TelegramClient
 MY_API_ID = "xxx"  # Your api id
 MY_API_HASH = "xxx"  # Your api hash
 MY_SESSION_NAME = "xxx"  # Your session name
-MAX_HOURS = 8  # Hours to retrieve msgs
+MAX_HOURS = 1  # Hours to retrieve msgs
 USER_NONREPETITION = True  # Set true for only getting one message per user
 INTERCHAT_NONREPETITION = True  # Set true for making the nonrepetition across chats
+
 
 
 # Set up logging
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+# Force the root logger to INFO level
+logging.getLogger().setLevel(logging.INFO)
 
 
 async def main():
@@ -29,15 +33,14 @@ async def main():
     api_hash = MY_API_HASH
     session_name = MY_SESSION_NAME
 
+    # Scrap messages
     try:
         async with TelegramClient(session_name, api_id, api_hash) as client:
             await client.start()
 
-            chats = await csv_to_list("chats.csv")
-            keywords = await csv_to_list("keywords.csv")
+            chats = [row[0] for row in await csv_to_list("chats.csv")]
+            keywords = [row[0] for row in await csv_to_list("keywords.csv")]
 
-            print(chats[0])
-            print(type(chats[0]))
             if chats is None or keywords is None:
                 logging.error("Could not load chats or keywords. Exiting.")
                 return
@@ -53,14 +56,41 @@ async def main():
             if len(messages) == 0:
                 print("No message could be retrieved")
 
-            for message in messages:
-                print(message.text)
-                print()
-            print(len(messages))
+            # for message in messages:
+            #     print(message.text)
+            #     print()
+            # print(len(messages))
             await client.disconnect()
 
     except Exception as e:
         logging.error("An unexpected error occurred: %s", e)
+
+    # Parse and save to file
+    print("Saving result to file...")
+    with open("output.txt", "w", encoding="utf-8") as file:
+        for message in messages:
+            user = message.sender
+            contacts = await extract_numbers_with_at_least_8_digits(message.text)
+            data = await extract_lines_with_keywords(message.text, keywords)
+            file.write(
+                "\nuser_name: "
+                + str(user.first_name)
+                + "\n"
+                + "user_id: "
+                + str(user.id)
+                + "\n"
+                + "username(alias): "
+                + str(user.username)
+                + "\n"
+            )
+            file.write("contacts: ")
+            for contact in contacts:
+                file.write(str(contact) + ", ")
+            file.write("\nData:\n")
+            for item in data:
+                file.write("\t" + str(item) + "\n")
+            file.write("_" * 40 + "\n")
+    print("Saved!")
 
 
 async def scrap_chat(
@@ -97,7 +127,7 @@ async def scrap_chat(
             start_time = datetime.now(pytz.utc) - timedelta(hours=MAX_HOURS)
 
             print(
-                f"Retrieving messages since {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
+                f"\nRetrieving messages since {start_time.strftime('%Y-%m-%d %H:%M:%S %Z')}"
             )
 
             # Store sender IDs in a set
@@ -132,7 +162,7 @@ async def scrap_chat(
 
             # Print results
             print(
-                f"\nFound {len(messages)} messages on <<{chat_input}>> in the last {MAX_HOURS} hours."
+                f"Found {len(messages)} unique messages on <<{chat_input}>> in the last {MAX_HOURS}h.\n"
             )
 
             return messages
@@ -148,7 +178,7 @@ async def scrap_chat(
                 logging.error(
                     "Failed to scrap chat %s after %s attempts.", chat_input, retries
                 )
-            return []
+                return []
 
 
 async def csv_to_list(filename: str) -> list:
@@ -172,6 +202,46 @@ async def csv_to_list(filename: str) -> list:
     except Exception as e:
         logging.error("An unexpected error occurred: %s", e)
         return None
+
+
+async def extract_lines_with_keywords(text, keywords):
+    """
+    Extracts lines from a text that contain any of the specified keywords.
+
+    Args:
+        text (str): The input text.
+        keywords (list): A list of keywords to search for.
+
+    Returns:
+        list: A list of lines containing at least one keyword.
+    """
+
+    lines = text.splitlines()
+    matching_lines = []
+    keyword_pattern = re.compile(
+        "|".join(re.escape(keyword) for keyword in keywords), re.IGNORECASE
+    )
+
+    for line in lines:
+        if keyword_pattern.search(line):
+            matching_lines.append(line)
+
+    return matching_lines
+
+
+async def extract_numbers_with_at_least_8_digits(text):
+    """
+    Extracts numbers with at least 8 digits from a text using regular expressions.
+
+    Args:
+        text (str): The input text.
+
+    Returns:
+        list: A list of numbers (as strings) that have at least 8 digits.
+    """
+    number_pattern = r"\b\d{8,}\b"
+    numbers = re.findall(number_pattern, text)
+    return numbers
 
 
 if __name__ == "__main__":
