@@ -1,17 +1,25 @@
 import asyncio
 import csv
-from cs50 import SQL
 from datetime import datetime, timedelta
+import logging
 import os
+import re
+from cs50 import SQL
 import pytz
-from telethon.tl.types import InputPeerChannel, InputPeerChat, InputPeerUser
-from telethon import TelegramClient, events
+from telethon import TelegramClient
 
-MY_API_ID = "xxx" # Your api id
-MY_API_HASH= "xxx" # Your api hash
+# MY_API_ID = "xxx"  # Your api id
+# MY_API_HASH = "xxx"  # Your api hash
+# MY_SESSION_NAME = "xxx" # Your session name
 MAX_HOURS = 8  # Hours to retrieve msgs
 USER_NONREPETITION = True  # Set true for only getting one message per user
 INTERCHAT_NONREPETITION = True  # Set true for making the nonrepetition across chats
+
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+)
 
 
 async def main():
@@ -19,28 +27,33 @@ async def main():
     # Setup api, hash, create client and connect
     api_id = MY_API_ID
     api_hash = MY_API_HASH
-    session_name = "h"
+    session_name = MY_SESSION_NAME
     client = TelegramClient(session_name, api_id, api_hash)
 
-    chats = csv_to_list("chats.csv")
-    keywords = csv_to_list("keywords.csv")
+    await client.start()
+
+    chats = await csv_to_list("chats.csv")
+    keywords = await csv_to_list("keywords.csv")
 
     messages = []
 
     for chat in chats:
         if INTERCHAT_NONREPETITION:
-            messages = scrap_chat(chat, keywords, client, messages)
+            messages = await scrap_chat(chat, keywords, client, messages)
         else:
             messages.append(scrap_chat(chat, keywords, client))
-            
-    
+
+    for message in messages:
+        print(message)
+        print()
+    print(len(messages))
     await client.disconnect()
 
 
 async def scrap_chat(
     chat_input: str, keywords: str, client: TelegramClient, messages=None
 ):
-    """Function for scrapping a group. Returns a list of msgs wich contain keywords"""
+    """Function for scrapping a chat/channel. Returns a list of msgs wich contain keywords"""
     if messages is None:
         messages = []
 
@@ -78,8 +91,7 @@ async def scrap_chat(
                 messages.append(message)
                 ids.append(message.sender_id)
         else:
-                messages.append(message)
-            
+            messages.append(message)
 
     # Print results
     print(
