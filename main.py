@@ -8,9 +8,9 @@ from cs50 import SQL
 import pytz
 from telethon import TelegramClient
 
-# MY_API_ID = "xxx"  # Your api id
-# MY_API_HASH = "xxx"  # Your api hash
-# MY_SESSION_NAME = "xxx" # Your session name
+MY_API_ID = "xxx"  # Your api id
+MY_API_HASH = "xxx"  # Your api hash
+MY_SESSION_NAME = "xxx"  # Your session name
 MAX_HOURS = 8  # Hours to retrieve msgs
 USER_NONREPETITION = True  # Set true for only getting one message per user
 INTERCHAT_NONREPETITION = True  # Set true for making the nonrepetition across chats
@@ -57,7 +57,7 @@ async def main():
             await client.disconnect()
 
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        logging.error("An unexpected error occurred: %s", e)
 
 
 async def scrap_chat(
@@ -141,13 +141,13 @@ async def csv_to_list(filename: str) -> list:
                 data.append(row)
         return data
     except FileNotFoundError:
-        logging.error(f"Error: File '{filename}' not found.")
+        logging.error("Error: File %s not found.", filename)
         return None
     except csv.Error as e:
-        logging.error(f"CSV error: {e}")
+        logging.error("CSV error: %s", e)
         return None
     except Exception as e:
-        logging.error(f"An unexpected error occurred: {e}")
+        logging.error("An unexpected error occurred: %s", e)
         return None
 
 
